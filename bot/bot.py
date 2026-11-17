@@ -184,7 +184,9 @@ async def handle_beat(request: web.Request):
 
     try:
         data = await request.json()
-        key = str(data["key"])
+        key = str(data["key"]).strip().upper()
+        if key.startswith("DA") and not key.startswith("DA-"):
+            key = "DA-" + key[2:]  # the dash sometimes gets lost when pasting
         level_id = int(data["levelId"])
         attempts = max(0, min(int(data.get("attempts", 0)), 10_000_000))
         gd_name = escape_markdown(str(data.get("gdName", ""))[:30])
