@@ -5,7 +5,7 @@
 	},
 	"id": "shaksesin.demon-announcer",
 	"name": "Demon Announcer",
-	"version": "v1.1.0",
+	"version": "v1.2.0",
 	"developer": "shaksesin",
 	"description": "Tells the Demon Announcer Discord bot when you beat a demon.",
 	"settings": {
@@ -13,13 +13,15 @@
 			"type": "string",
 			"name": "Bot Key",
 			"description": "Type /link in Discord and paste the key the bot gives you here.",
-			"default": ""
+			"default": "",
+			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/.-_"
 		},
 		"bot-url": {
 			"type": "string",
 			"name": "Bot Address",
-			"description": "The web address where the Demon Announcer bot is running.",
-			"default": ""
+			"description": "Where the Demon Announcer bot is running. Leave it as http://localhost:8080 if the bot runs on this PC.",
+			"default": "http://localhost:8080",
+			"filter": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:/.-_"
 		}
 	}
 }
