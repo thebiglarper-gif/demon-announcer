@@ -14,6 +14,7 @@ from discord.utils import escape_markdown
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 PORT = int(os.environ.get("PORT", "8080"))
+HOST = os.environ.get("HOST", "0.0.0.0")  # 127.0.0.1 = only this PC can reach the bot
 # Discord user IDs (comma separated) allowed to use /removedemon and /block
 ADMINS = {int(x) for x in os.environ.get("BOT_ADMINS", "").split(",") if x.strip()}
 
@@ -253,8 +254,8 @@ async def start_web():
     app.router.add_get("/", lambda _: web.Response(text="Demon Announcer is running!"))
     runner = web.AppRunner(app)
     await runner.setup()
-    await web.TCPSite(runner, "0.0.0.0", PORT).start()
-    print(f"Web server listening on port {PORT}")
+    await web.TCPSite(runner, HOST, PORT).start()
+    print(f"Web server listening on http://{HOST}:{PORT}")
 
 
 @client.event
