@@ -21,7 +21,9 @@ static char const* demonKey(GJGameLevel* level) {
 static void announce(GJGameLevel* level) {
 	auto key = Mod::get()->getSettingValue<std::string>("bot-key");
 	auto url = Mod::get()->getSettingValue<std::string>("bot-url");
-	if (key.empty() || url.empty()) return;
+	if (key.empty()) return;
+	// A broken or empty address (like "httplocalhost8080") falls back to the bot on this PC
+	if (url.find("://") == std::string::npos) url = "http://localhost:8080";
 	if (url.ends_with('/')) url.pop_back();
 
 	auto body = matjson::makeObject({
@@ -42,8 +44,13 @@ static void announce(GJGameLevel* level) {
 		} else if (res.code() == 401) {
 			Notification::create("Bot Key is wrong. Run /link again", NotificationIcon::Error)->show();
 		} else {
-			log::warn("Demon Announcer bot failed with code {}", res.code());
-			Notification::create("Couldn't reach the Discord bot", NotificationIcon::Error)->show();
+			// Show the bot's own reason when it gives one
+			auto reason = res.json().unwrapOr(matjson::Value())["error"].asString().unwrapOr("");
+			log::warn("Demon Announcer bot failed with code {}: {}", res.code(), reason);
+			Notification::create(
+				reason.empty() ? "Couldn't reach the Discord bot" : "Discord bot: " + reason,
+				NotificationIcon::Error
+			)->show();
 		}
 	});
 }
