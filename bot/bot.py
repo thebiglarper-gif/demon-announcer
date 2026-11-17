@@ -15,7 +15,7 @@ from discord.utils import escape_markdown
 TOKEN = os.environ["DISCORD_TOKEN"]
 PORT = int(os.environ.get("PORT", "8080"))
 HOST = os.environ.get("HOST", "0.0.0.0")  # 127.0.0.1 = only this PC can reach the bot
-# Discord user IDs (comma separated) allowed to use /removedemon and /block
+# Discord user IDs (comma separated) allowed to use /setchannel, /removedemon and /block
 ADMINS = {int(x) for x in os.environ.get("BOT_ADMINS", "").split(",") if x.strip()}
 
 DB = sqlite3.connect(os.environ.get("DB_PATH", "demons.db"))
@@ -78,6 +78,9 @@ async def link(inter: discord.Interaction):
 @tree.command(description="Pick the channel where demon wins get posted")
 @app_commands.default_permissions(manage_guild=True)
 async def setchannel(inter: discord.Interaction, channel: discord.TextChannel):
+    if not is_admin(inter):
+        await inter.response.send_message("Only the bot's owners can do that.", ephemeral=True)
+        return
     DB.execute("INSERT OR REPLACE INTO channels VALUES (?, ?)", (inter.guild_id, channel.id))
     DB.commit()
     await inter.response.send_message(f"Demon wins will be posted in {channel.mention} 🔥")
@@ -124,7 +127,7 @@ async def leaderboard(inter: discord.Interaction):
 @tree.command(description="(Bot admins) Remove a fake demon from someone's record")
 async def removedemon(inter: discord.Interaction, member: discord.User, level_id: int):
     if not is_admin(inter):
-        await inter.response.send_message("Only bot admins can do that.", ephemeral=True)
+        await inter.response.send_message("Only the bot's owners can do that.", ephemeral=True)
         return
     cur = DB.execute("DELETE FROM beats WHERE discord_id = ? AND level_id = ?", (member.id, level_id))
     DB.commit()
@@ -134,7 +137,7 @@ async def removedemon(inter: discord.Interaction, member: discord.User, level_id
 @tree.command(description="(Bot admins) Block or unblock someone from announcing demons")
 async def block(inter: discord.Interaction, member: discord.User, blocked: bool = True):
     if not is_admin(inter):
-        await inter.response.send_message("Only bot admins can do that.", ephemeral=True)
+        await inter.response.send_message("Only the bot's owners can do that.", ephemeral=True)
         return
     DB.execute("INSERT INTO players (discord_id, blocked) VALUES (?, ?) "
                "ON CONFLICT(discord_id) DO UPDATE SET blocked = excluded.blocked", (member.id, int(blocked)))
