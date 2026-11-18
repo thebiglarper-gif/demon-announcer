@@ -79,9 +79,8 @@ static void syncOldDemons() {
 		}
 	};
 	auto glm = GameLevelManager::sharedState();
-	CCDictElement* element;
-	CCDICT_FOREACH(glm->m_onlineLevels, element) {
-		add(static_cast<GJGameLevel*>(element->getObject()));
+	for (auto [id, level] : CCDictionaryExt<std::string, GJGameLevel*>(glm->m_onlineLevels)) {
+		add(level);
 	}
 	for (int id : {14, 18, 20}) add(glm->getMainLevel(id, true)); // Clubstep, ToE 2, Deadlocked
 
