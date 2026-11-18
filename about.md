@@ -7,3 +7,5 @@ Every time you beat a demon for the first time, the Demon Announcer Discord bot 
 3. Go beat a demon!
 
 Practice mode and start-position runs are not announced.
+
+The first time GD opens, the mod also adds the demons you beat **before** installing it to your record (quietly, no announcements), so your counts are complete.
