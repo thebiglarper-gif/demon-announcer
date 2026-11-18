@@ -5,7 +5,7 @@
 	},
 	"id": "shaksesin.demon-announcer",
 	"name": "Demon Announcer",
-	"version": "v1.2.0",
+	"version": "v1.3.0",
 	"developer": "shaksesin",
 	"description": "Tells the Demon Announcer Discord bot when you beat a demon.",
 	"settings": {
