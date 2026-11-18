@@ -4,7 +4,8 @@
 1. Go to https://discord.com/developers/applications and click **New Application**. Name it "Demon Announcer".
 2. Click **Bot** on the left, then **Reset Token**, and copy the token. Keep it secret!
 3. Click **OAuth2** > **URL Generator**. Tick **bot** and **applications.commands**.
-   Under bot permissions, tick **Send Messages** and **Embed Links**.
+   Under bot permissions, tick **Send Messages**, **Embed Links** and **Mention Everyone**
+   (Mention Everyone is only used when a bot owner beats an extreme demon).
 4. Open the link at the bottom and add the bot to your server.
 
 ## 2. Run the bot
@@ -47,4 +48,4 @@ Demons a player beat before installing the mod are added automatically the first
 - Turn on two-factor login (2FA) for the Discord account that owns the bot.
 - The bot checks every win with the real GD servers, so the level name and difficulty can't be faked.
 - Player keys are stored scrambled (hashed), wrong keys and spam get blocked for a while,
-  and the bot's messages can never ping @everyone, @here, roles or people.
+  and the bot's messages never ping anyone, except @everyone when a bot owner beats an extreme demon.
