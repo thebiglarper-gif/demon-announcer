@@ -64,18 +64,15 @@ static void announce(GJGameLevel* level) {
 	});
 }
 
-// Sends every demon already beaten before the mod was installed (once per key)
-static void syncOldDemons() {
+// Sends every demon in the save file, so the bot's list matches it (runs each time GD opens)
+static void syncSaveFile() {
 	auto key = Mod::get()->getSettingValue<std::string>("bot-key");
-	if (key.empty() || Mod::get()->getSavedValue<std::string>("synced-key") == key) return;
+	if (key.empty()) return;
 
-	std::vector<matjson::Value> levels;
+	std::map<int, int> demons; // level ID -> attempts
 	auto add = [&](GJGameLevel* level) {
 		if (level && level->m_stars.value() == 10 && level->m_normalPercent.value() >= 100) {
-			levels.push_back(matjson::makeObject({
-				{"levelId", level->m_levelID.value()},
-				{"attempts", level->m_attempts.value()}
-			}));
+			demons[level->m_levelID.value()] = level->m_attempts.value();
 		}
 	};
 	auto glm = GameLevelManager::sharedState();
@@ -84,19 +81,26 @@ static void syncOldDemons() {
 	}
 	for (int id : {14, 18, 20}) add(glm->getMainLevel(id, true)); // Clubstep, ToE 2, Deadlocked
 
-	if (levels.empty()) {
-		Mod::get()->setSavedValue("synced-key", key);
-		return;
+	// GD's own record of completed demons ("demon_<id>"), which still has levels you deleted from Saved
+	for (auto [name, value] : CCDictionaryExt<std::string, CCObject*>(GameStatsManager::sharedState()->m_completedLevels)) {
+		if (!name.starts_with("demon_")) continue;
+		if (auto id = utils::numFromString<int>(name.substr(6)); id.isOk() && !demons.contains(id.unwrap())) {
+			demons[id.unwrap()] = 0; // attempts unknown for deleted levels
+		}
 	}
+	if (demons.empty()) return;
 
+	std::vector<matjson::Value> levels;
+	for (auto [id, attempts] : demons) {
+		levels.push_back(matjson::makeObject({{"levelId", id}, {"attempts", attempts}}));
+	}
 	web::WebRequest req;
 	req.bodyJSON(matjson::makeObject({{"key", key}, {"levels", levels}}));
-	s_sync.spawn("Demon Announcer sync", req.post(botUrl() + "/api/sync"), [key](web::WebResponse res) {
+	s_sync.spawn("Demon Announcer sync", req.post(botUrl() + "/api/sync"), [](web::WebResponse res) {
 		if (res.ok()) {
-			Mod::get()->setSavedValue("synced-key", key);
 			auto count = res.json().unwrapOr(matjson::Value())["imported"].asInt().unwrapOr(0);
 			if (count > 0) {
-				Notification::create(fmt::format("Added {} old demons to Discord!", count), NotificationIcon::Success)->show();
+				Notification::create(fmt::format("Added {} demons from your save to Discord!", count), NotificationIcon::Success)->show();
 			}
 		} else {
 			log::warn("Demon Announcer sync failed with code {}: {}", res.code(), botError(res));
@@ -110,7 +114,7 @@ class $modify(MenuLayer) {
 		static bool synced = false;
 		if (!synced) {
 			synced = true;
-			syncOldDemons();
+			syncSaveFile();
 		}
 		return true;
 	}
