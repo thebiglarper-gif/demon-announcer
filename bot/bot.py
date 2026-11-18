@@ -1,4 +1,5 @@
 """Demon Announcer bot: gets demon wins from the Geode mod and posts them in Discord."""
+import asyncio
 import hashlib
 import os
 import secrets
@@ -55,6 +56,13 @@ def hash_key(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()
 
 
+def clean_key(key) -> str:
+    key = str(key).strip().upper()
+    if key.startswith("DA") and not key.startswith("DA-"):
+        key = "DA-" + key[2:]  # the dash sometimes gets lost when pasting
+    return key
+
+
 def is_admin(inter: discord.Interaction) -> bool:
     return inter.user.id in ADMINS
 
@@ -106,6 +114,44 @@ async def demons(inter: discord.Interaction, member: discord.Member | None = Non
 
 
 @app_commands.guild_only()
+@tree.command(description="List every demon someone has beaten, with attempts")
+@app_commands.describe(member="Whose demons to show (leave empty for yours)",
+                       difficulty="Which demon difficulty to show",
+                       page="Page number, if the list is long")
+@app_commands.choices(difficulty=[app_commands.Choice(name="All demons", value="all")] +
+                      [app_commands.Choice(name=DIFFS[d][0], value=d) for d in ORDER])
+async def completions(inter: discord.Interaction, member: discord.Member | None = None,
+                      difficulty: app_commands.Choice[str] | None = None, page: int = 1):
+    member = member or inter.user
+    diff = difficulty.value if difficulty else "all"
+    rows = DB.execute("SELECT level_name, difficulty, attempts, platformer, ts FROM beats WHERE discord_id = ?",
+                      (member.id,)).fetchall()
+    if diff != "all":
+        rows = [r for r in rows if r[1] == diff]
+    rows.sort(key=lambda r: (-ORDER.index(r[1]), -r[4]))  # hardest first, then newest
+    label = "demons" if diff == "all" else DIFFS[diff][0] + "s"
+    if not rows:
+        await inter.response.send_message(f"{member.display_name} hasn't announced any {label} yet.")
+        return
+
+    per_page = 20
+    pages = (len(rows) + per_page - 1) // per_page
+    page = max(1, min(page, pages))
+    lines = [f"{DIFFS[d][2]} **{escape_markdown(n)}**{' (Platformer)' if p else ''} — "
+             f"{a:,} attempts · {f'<t:{ts}:d>' if ts else 'before the bot'}"
+             for n, d, a, p, ts in rows[(page - 1) * per_page: page * per_page]]
+    total_attempts = sum(r[2] for r in rows)
+    embed = discord.Embed(title=f"{member.display_name}'s {label} — {len(rows)} beaten",
+                          description="\n".join(lines),
+                          color=0xFF1744 if diff == "all" else DIFFS[diff][1])
+    footer = f"Total attempts: {total_attempts:,}"
+    if pages > 1:
+        footer += f" · Page {page}/{pages} (use the page option for more)"
+    embed.set_footer(text=footer)
+    await inter.response.send_message(embed=embed)
+
+
+@app_commands.guild_only()
 @tree.command(description="Top demon beaters in this server")
 async def leaderboard(inter: discord.Interaction):
     rows = DB.execute("SELECT b.discord_id, COUNT(*) AS n FROM beats b JOIN players p USING (discord_id) "
@@ -148,21 +194,41 @@ async def block(inter: discord.Interaction, member: discord.User, blocked: bool 
 
 # ---------- Checking levels with the real GD servers ----------
 
+GD_URL = "https://www.boomlings.com/database/getGJLevels21.php"
+GD_SECRET = "Wmfd2893gb7"
+
+
+def parse_demon(level_text: str):
+    """Turns one level from the GD servers into (id, name, difficulty, platformer), or None if not a rated demon."""
+    parts = level_text.split(":")
+    info = dict(zip(parts[::2], parts[1::2]))
+    if info.get("17") != "1" or info.get("18") != "10" or not info.get("1", "").isdigit():
+        return None
+    return int(info["1"]), info.get("2", "Unknown"), GD_DEMON_DIFF.get(info.get("43", "0"), "hard"), info.get("15") == "5"
+
+
+async def lookup_levels(level_ids: list[int]) -> dict[int, tuple]:
+    """Asks the GD servers about many levels at once. Returns {id: (name, difficulty, platformer)} for real demons."""
+    found = {i: (MAIN_LEVEL_DEMONS[i], "hard", False) for i in level_ids if i in MAIN_LEVEL_DEMONS}
+    rest = [i for i in level_ids if i not in MAIN_LEVEL_DEMONS]
+    for start in range(0, len(rest), 50):
+        chunk = rest[start:start + 50]
+        async with http.post(GD_URL, data={"str": ",".join(map(str, chunk)), "type": "10", "secret": GD_SECRET},
+                             timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            text = await resp.text()
+        if text and not text.startswith("-1"):
+            for level_text in text.split("#")[0].split("|"):
+                demon = parse_demon(level_text)
+                if demon and demon[0] in chunk:
+                    found[demon[0]] = demon[1:]
+        if start + 50 < len(rest):
+            await asyncio.sleep(1)  # be gentle with the GD servers
+    return found
+
+
 async def lookup_level(level_id: int):
     """Returns (name, difficulty, platformer) if the level is a real rated demon, otherwise None."""
-    if level_id in MAIN_LEVEL_DEMONS:
-        return MAIN_LEVEL_DEMONS[level_id], "hard", False
-    async with http.post("https://www.boomlings.com/database/getGJLevels21.php",
-                         data={"str": str(level_id), "type": "0", "secret": "Wmfd2893gb7"},
-                         timeout=aiohttp.ClientTimeout(total=10)) as resp:
-        text = await resp.text()
-    if not text or text.startswith("-1"):
-        return None
-    parts = text.split("#")[0].split("|")[0].split(":")
-    info = dict(zip(parts[::2], parts[1::2]))
-    if info.get("1") != str(level_id) or info.get("17") != "1" or info.get("18") != "10":
-        return None  # not a rated demon
-    return info.get("2", "Unknown"), GD_DEMON_DIFF.get(info.get("43", "0"), "hard"), info.get("15") == "5"
+    return (await lookup_levels([level_id])).get(level_id)
 
 
 # ---------- Web server the mod talks to ----------
@@ -187,9 +253,7 @@ async def handle_beat(request: web.Request):
 
     try:
         data = await request.json()
-        key = str(data["key"]).strip().upper()
-        if key.startswith("DA") and not key.startswith("DA-"):
-            key = "DA-" + key[2:]  # the dash sometimes gets lost when pasting
+        key = clean_key(data["key"])
         level_id = int(data["levelId"])
         attempts = max(0, min(int(data.get("attempts", 0)), 10_000_000))
         gd_name = escape_markdown(str(data.get("gdName", ""))[:30])
@@ -253,9 +317,53 @@ async def handle_beat(request: web.Request):
     return web.json_response({"ok": True, "posted": posted})
 
 
+SYNC_COOLDOWN = 600  # seconds between old-demon syncs for one player
+last_sync: dict[int, float] = {}
+
+
+async def handle_sync(request: web.Request):
+    """The mod sends every demon the player already beat before installing it. Saved quietly, no announcements."""
+    ip = request.remote or "?"
+    if over_limit(hits, ip, IP_LIMIT) or over_limit(bad_keys, ip, BAD_KEY_LIMIT):
+        return web.json_response({"error": "slow down"}, status=429)
+    hits[ip].append(time.time())
+    try:
+        data = await request.json()
+        key = clean_key(data["key"])
+        levels = {int(l["levelId"]): max(0, min(int(l.get("attempts", 0)), 10_000_000))
+                  for l in data["levels"][:3000]}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return web.json_response({"error": "bad request"}, status=400)
+
+    row = DB.execute("SELECT discord_id, blocked FROM players WHERE key_hash = ?", (hash_key(key),)).fetchone()
+    if not row:
+        bad_keys[ip].append(time.time())
+        return web.json_response({"error": "unknown key, run /link in Discord"}, status=401)
+    discord_id, blocked = row
+    if blocked:
+        return web.json_response({"error": "blocked"}, status=403)
+    if time.time() - last_sync.get(discord_id, 0) < SYNC_COOLDOWN:
+        return web.json_response({"error": "slow down"}, status=429)
+    last_sync[discord_id] = time.time()
+
+    try:
+        demons = await lookup_levels(list(levels))
+    except (aiohttp.ClientError, TimeoutError):
+        return web.json_response({"error": "couldn't check the levels with GD servers"}, status=503)
+    imported = 0
+    for level_id, (name, difficulty, platformer) in demons.items():
+        cur = DB.execute("INSERT OR IGNORE INTO beats VALUES (?, ?, ?, ?, ?, ?, 0)",  # ts 0 = beaten before the bot
+                         (discord_id, level_id, name[:100], difficulty, levels[level_id], int(platformer)))
+        imported += cur.rowcount
+    DB.commit()
+    print(f"Synced {imported} old demons for {discord_id}")
+    return web.json_response({"ok": True, "imported": imported})
+
+
 async def start_web():
-    app = web.Application(client_max_size=4096)  # requests bigger than 4 KB are refused
+    app = web.Application(client_max_size=256 * 1024)  # requests bigger than 256 KB are refused
     app.router.add_post("/api/beat", handle_beat)
+    app.router.add_post("/api/sync", handle_sync)
     app.router.add_get("/", lambda _: web.Response(text="Demon Announcer is running!"))
     runner = web.AppRunner(app)
     await runner.setup()
