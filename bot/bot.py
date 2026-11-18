@@ -121,15 +121,57 @@ async def demons(inter: discord.Interaction, member: discord.Member | None = Non
     await inter.response.send_message(embed=embed)
 
 
+class PageButtons(discord.ui.View):
+    """◀ Back / Next ▶ buttons that flip through pages of a list."""
+
+    def __init__(self, owner_id: int, make_page, pages: int):
+        super().__init__(timeout=300)  # buttons stop working after 5 minutes
+        self.owner_id, self.make_page, self.pages, self.page = owner_id, make_page, pages, 1
+        self.message: discord.Message | None = None
+        self.refresh()
+
+    def refresh(self):
+        self.back.disabled = self.page <= 1
+        self.forward.disabled = self.page >= self.pages
+
+    async def interaction_check(self, inter: discord.Interaction) -> bool:
+        if inter.user.id != self.owner_id:
+            await inter.response.send_message("Only the person who used the command can flip the pages.",
+                                              ephemeral=True)
+            return False
+        return True
+
+    async def flip(self, inter: discord.Interaction, step: int):
+        self.page = max(1, min(self.page + step, self.pages))
+        self.refresh()
+        await inter.response.edit_message(embed=self.make_page(self.page), view=self)
+
+    @discord.ui.button(label="◀ Back", style=discord.ButtonStyle.secondary)
+    async def back(self, inter: discord.Interaction, button: discord.ui.Button):
+        await self.flip(inter, -1)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.primary)
+    async def forward(self, inter: discord.Interaction, button: discord.ui.Button):
+        await self.flip(inter, 1)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+        if self.message:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass
+
+
 @app_commands.guild_only()
 @tree.command(description="List every demon someone has beaten, with attempts")
 @app_commands.describe(member="Whose demons to show (leave empty for yours)",
-                       difficulty="Which demon difficulty to show",
-                       page="Page number, if the list is long")
+                       difficulty="Which demon difficulty to show")
 @app_commands.choices(difficulty=[app_commands.Choice(name="All demons", value="all")] +
                       [app_commands.Choice(name=DIFFS[d][0], value=d) for d in ORDER])
 async def completions(inter: discord.Interaction, member: discord.Member | None = None,
-                      difficulty: app_commands.Choice[str] | None = None, page: int = 1):
+                      difficulty: app_commands.Choice[str] | None = None):
     member = member or inter.user
     diff = difficulty.value if difficulty else "all"
     rows = DB.execute("SELECT level_name, difficulty, attempts, platformer, ts FROM beats WHERE discord_id = ?",
@@ -144,19 +186,27 @@ async def completions(inter: discord.Interaction, member: discord.Member | None 
 
     per_page = 20
     pages = (len(rows) + per_page - 1) // per_page
-    page = max(1, min(page, pages))
-    lines = [f"{DIFFS[d][2]} **{escape_markdown(n)}**{' (Platformer)' if p else ''} — "
-             f"{a:,} attempts · {f'<t:{ts}:d>' if ts else 'before the bot'}"
-             for n, d, a, p, ts in rows[(page - 1) * per_page: page * per_page]]
     total_attempts = sum(r[2] for r in rows)
-    embed = discord.Embed(title=f"{member.display_name}'s {label} — {len(rows)} beaten",
-                          description="\n".join(lines),
-                          color=0xFF1744 if diff == "all" else DIFFS[diff][1])
-    footer = f"Total attempts: {total_attempts:,}"
-    if pages > 1:
-        footer += f" · Page {page}/{pages} (use the page option for more)"
-    embed.set_footer(text=footer)
-    await inter.response.send_message(embed=embed)
+
+    def make_page(page: int) -> discord.Embed:
+        lines = [f"{DIFFS[d][2]} **{escape_markdown(n)}**{' (Platformer)' if p else ''} — "
+                 f"{a:,} attempts{f' · <t:{ts}:d>' if ts else ''}"
+                 for n, d, a, p, ts in rows[(page - 1) * per_page: page * per_page]]
+        embed = discord.Embed(title=f"{member.display_name}'s {label} — {len(rows)} beaten",
+                              description="\n".join(lines),
+                              color=0xFF1744 if diff == "all" else DIFFS[diff][1])
+        footer = f"Total attempts: {total_attempts:,}"
+        if pages > 1:
+            footer += f" · Page {page}/{pages}"
+        embed.set_footer(text=footer)
+        return embed
+
+    if pages == 1:
+        await inter.response.send_message(embed=make_page(1))
+        return
+    view = PageButtons(inter.user.id, make_page, pages)
+    await inter.response.send_message(embed=make_page(1), view=view)
+    view.message = await inter.original_response()
 
 
 @app_commands.guild_only()
