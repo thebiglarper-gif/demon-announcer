@@ -375,12 +375,12 @@ async def handle_beat(request: web.Request):
     return web.json_response({"ok": True, "posted": posted})
 
 
-SYNC_COOLDOWN = 600  # seconds between old-demon syncs for one player
+SYNC_COOLDOWN = 120  # seconds between save-file syncs for one player
 last_sync: dict[int, float] = {}
 
 
 async def handle_sync(request: web.Request):
-    """The mod sends every demon the player already beat before installing it. Saved quietly, no announcements."""
+    """The mod sends every demon in the player's save file. New ones are saved quietly, no announcements."""
     ip = request.remote or "?"
     if over_limit(hits, ip, IP_LIMIT) or over_limit(bad_keys, ip, BAD_KEY_LIMIT):
         return web.json_response({"error": "slow down"}, status=429)
@@ -408,13 +408,16 @@ async def handle_sync(request: web.Request):
         demons = await lookup_levels(list(levels))
     except (aiohttp.ClientError, TimeoutError):
         return web.json_response({"error": "couldn't check the levels with GD servers"}, status=503)
+    known = {r[0] for r in DB.execute("SELECT level_id FROM beats WHERE discord_id = ?", (discord_id,))}
     imported = 0
     for level_id, (name, difficulty, platformer) in demons.items():
-        cur = DB.execute("INSERT OR IGNORE INTO beats VALUES (?, ?, ?, ?, ?, ?, 0)",  # ts 0 = beaten before the bot
-                         (discord_id, level_id, name[:100], difficulty, levels[level_id], int(platformer)))
-        imported += cur.rowcount
+        # New ones are added quietly (ts 0 = no date); known ones get their attempts updated from the save
+        DB.execute("INSERT INTO beats VALUES (?, ?, ?, ?, ?, ?, 0) "
+                   "ON CONFLICT(discord_id, level_id) DO UPDATE SET attempts = MAX(attempts, excluded.attempts)",
+                   (discord_id, level_id, name[:100], difficulty, levels[level_id], int(platformer)))
+        imported += level_id not in known
     DB.commit()
-    print(f"Synced {imported} old demons for {discord_id}")
+    print(f"Synced save file for {discord_id}: {len(demons)} demons, {imported} new")
     return web.json_response({"ok": True, "imported": imported})
 
 
