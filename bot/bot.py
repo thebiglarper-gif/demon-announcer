@@ -45,7 +45,7 @@ POST_COOLDOWN = 30          # seconds between announcements for one player
 IP_LIMIT = (20, 60)         # max 20 requests per 60 s from one address
 BAD_KEY_LIMIT = (5, 600)    # max 5 wrong keys per 10 min from one address
 
-# Never let a message ping @everyone, @here, roles or users
+# Never let a message ping @everyone, @here, roles or users (except @everyone for the owners' extremes)
 client = discord.Client(intents=discord.Intents.default(), allowed_mentions=discord.AllowedMentions.none())
 tree = app_commands.CommandTree(client)
 http: aiohttp.ClientSession | None = None
@@ -349,6 +349,7 @@ async def handle_beat(request: web.Request):
 
     name, color, _ = DIFFS[difficulty]
     total = DB.execute("SELECT COUNT(*) FROM beats WHERE discord_id = ?", (discord_id,)).fetchone()[0]
+    ping_everyone = difficulty == "extreme" and discord_id in ADMINS  # only the owners' extremes ping
     posted = 0
     for guild_id, channel_id in DB.execute("SELECT guild_id, channel_id FROM channels").fetchall():
         guild = client.get_guild(guild_id)
@@ -367,8 +368,12 @@ async def handle_beat(request: web.Request):
             color=color)
         if gd_name:
             embed.set_footer(text=f"GD: {gd_name}")
+        # @everyone only works where the bot has the "Mention @everyone" permission
+        ping = ping_everyone and channel.permissions_for(guild.me).mention_everyone
         try:
-            await channel.send(embed=embed)
+            await channel.send(content="@everyone" if ping else None, embed=embed,
+                               allowed_mentions=discord.AllowedMentions(everyone=ping, users=False,
+                                                                          roles=False, replied_user=False))
             posted += 1
         except discord.HTTPException:
             pass
