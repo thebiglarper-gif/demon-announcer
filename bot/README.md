@@ -34,9 +34,13 @@ for example from a hosting service that gives your app a public URL.
 - `/setchannel #channel`: where wins get posted (admins only)
 - `/link`: get your key for the mod (only you can see it)
 - `/demons [@someone]`: demon counts by difficulty
+- `/completions [@someone] [difficulty] [page]`: every demon beaten, with attempts and date (pick All or one difficulty)
 - `/leaderboard`: top 10 in the server
 - `/removedemon @someone level_id`: delete a fake win (bot admins only)
 - `/block @someone`: stop someone from announcing (bot admins only)
+
+Demons a player beat before installing the mod are added automatically the first time GD opens
+(no announcements for those; they show as "before the bot" in `/completions`).
 
 ## Security
 - Never share the bot token or put it in GitHub. If it leaks, click **Reset Token** right away.
