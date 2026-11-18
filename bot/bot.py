@@ -85,9 +85,17 @@ async def link(inter: discord.Interaction):
 @app_commands.guild_only()
 @tree.command(description="Pick the channel where demon wins get posted")
 @app_commands.default_permissions(manage_guild=True)
-async def setchannel(inter: discord.Interaction, channel: discord.TextChannel):
+@app_commands.describe(channel="The text channel for demon wins")
+async def setchannel(inter: discord.Interaction,
+                     channel: app_commands.AppCommandChannel):
     if not is_admin(inter):
         await inter.response.send_message("Only the bot's owners can do that.", ephemeral=True)
+        return
+    real = inter.guild.get_channel(channel.id)
+    if not isinstance(real, discord.TextChannel) or not real.permissions_for(inter.guild.me).send_messages:
+        await inter.response.send_message(
+            f"I can't post in {channel.mention}. Pick a text channel where I can see and send messages "
+            "(check the channel's permissions for my role).", ephemeral=True)
         return
     DB.execute("INSERT OR REPLACE INTO channels VALUES (?, ?)", (inter.guild_id, channel.id))
     DB.commit()
