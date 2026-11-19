@@ -49,3 +49,35 @@ jobs:
         with:
           name: Demon Announcer for GD 2.2091
           path: ${{ steps.build.outputs.build-output }}
+
+  # Puts both builds on a public release page with permanent download links (no GitHub login needed):
+  #   .../releases/download/builds/demon-announcer-gd2.2081.geode
+  #   .../releases/download/builds/demon-announcer-gd2.2091.geode
+  publish:
+    name: Publish downloads
+    needs: [gd-2-2081, gd-2-2091]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+
+      - name: Name the files
+        run: |
+          mkdir dl
+          cp "out/Demon Announcer for GD 2.2081/"*.geode dl/demon-announcer-gd2.2081.geode
+          cp "out/Demon Announcer for GD 2.2091/"*.geode dl/demon-announcer-gd2.2091.geode
+          ls -la dl
+
+      - name: Update the downloads release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release view builds > /dev/null 2>&1 || gh release create builds --latest \
+            --title "Demon Announcer downloads" \
+            --notes "Always the newest build. demon-announcer-gd2.2081.geode is for Geometry Dash 2.2081 (Geode v5). demon-announcer-gd2.2091.geode is for Geometry Dash 2.2091 (Geode v6, still in testing)."
+          gh release upload builds dl/*.geode --clobber
