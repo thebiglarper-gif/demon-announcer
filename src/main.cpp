@@ -2,6 +2,12 @@
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/utils/web.hpp>
+#include <Geode/utils/cocos.hpp>
+#include <Geode/ui/Notification.hpp>
+#include <Geode/binding/GameLevelManager.hpp>
+#include <Geode/binding/GameStatsManager.hpp>
+#include <Geode/binding/GameManager.hpp>
+#include <Geode/binding/GJGameLevel.hpp>
 
 using namespace geode::prelude;
 
