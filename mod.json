@@ -1,11 +1,11 @@
 {
-	"geode": "5.10.1",
+	"geode": "5.11.2",
 	"gd": {
 		"win": "2.2081"
 	},
 	"id": "shaksesin.demon-announcer",
 	"name": "Demon Announcer",
-	"version": "v1.4.0",
+	"version": "v1.5.0",
 	"developer": "shaksesin",
 	"description": "Tells the Demon Announcer Discord bot when you beat a demon.",
 	"settings": {
